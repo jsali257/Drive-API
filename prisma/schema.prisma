@@ -1,0 +1,549 @@
+// ─────────────────────────────────────────────────────────────
+// StorageServer — Prisma Schema
+// ─────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  DEVELOPER
+  USER
+  READ_ONLY
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+}
+
+enum FileStatus {
+  ACTIVE
+  TRASHED
+  DELETED
+  PROCESSING
+  UPLOAD_FAILED
+}
+
+enum VirusScanStatus {
+  PENDING
+  SCANNING
+  CLEAN
+  INFECTED
+  SKIPPED
+}
+
+enum ShareType {
+  PUBLIC
+  PRIVATE
+  PASSWORD_PROTECTED
+}
+
+enum ShareAccess {
+  READ
+  DOWNLOAD
+  UPLOAD
+}
+
+enum ApiKeyStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum NotificationType {
+  UPLOAD_COMPLETE
+  UPLOAD_FAILED
+  FILE_SHARED
+  API_KEY_CREATED
+  STORAGE_WARNING
+  SYSTEM_ERROR
+  FILE_DELETED
+  VERSION_CREATED
+  SHARE_ACCESSED
+}
+
+enum AuditAction {
+  LOGIN
+  LOGOUT
+  LOGIN_FAILED
+  PASSWORD_CHANGED
+  USER_CREATED
+  USER_UPDATED
+  USER_DELETED
+  ROLE_CHANGED
+  FILE_UPLOADED
+  FILE_DOWNLOADED
+  FILE_DELETED
+  FILE_RESTORED
+  FILE_MOVED
+  FILE_RENAMED
+  FILE_COPIED
+  FILE_SHARED
+  FOLDER_CREATED
+  FOLDER_DELETED
+  FOLDER_MOVED
+  FOLDER_RENAMED
+  API_KEY_CREATED
+  API_KEY_REVOKED
+  SHARE_CREATED
+  SHARE_DELETED
+  SHARE_ACCESSED
+  SETTINGS_CHANGED
+  PERMISSION_CHANGED
+}
+
+enum WebhookEvent {
+  FILE_UPLOADED
+  FILE_DELETED
+  FILE_SHARED
+  USER_CREATED
+  STORAGE_FULL
+}
+
+// ─── Users ────────────────────────────────────────────────────
+
+model User {
+  id                String     @id @default(cuid())
+  email             String     @unique
+  username          String     @unique
+  displayName       String?
+  passwordHash      String
+  role              UserRole   @default(USER)
+  status            UserStatus @default(ACTIVE)
+  avatar            String?
+  twoFactorSecret   String?
+  twoFactorEnabled  Boolean    @default(false)
+  emailVerified     Boolean    @default(false)
+  emailVerifyToken  String?
+  resetPasswordToken String?
+  resetPasswordExpiry DateTime?
+  loginAttempts     Int        @default(0)
+  lockedUntil       DateTime?
+  lastLoginAt       DateTime?
+  lastLoginIp       String?
+  storageQuotaBytes BigInt     @default(0)
+  storageUsedBytes  BigInt     @default(0)
+  timezone          String     @default("UTC")
+  language          String     @default("en")
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  deletedAt         DateTime?
+
+  files          File[]
+  folders        Folder[]
+  shares         Share[]
+  apiKeys        ApiKey[]
+  refreshTokens  RefreshToken[]
+  sessions       Session[]
+  auditLogs      AuditLog[]
+  activityLogs   ActivityLog[]
+  notifications  Notification[]
+  createdBy      File[]         @relation("FileCreatedBy")
+  webhooks       Webhook[]
+
+  @@index([email])
+  @@index([username])
+  @@index([status])
+  @@map("users")
+}
+
+// ─── Sessions ─────────────────────────────────────────────────
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  ipAddress String?
+  userAgent String?
+  isActive  Boolean  @default(true)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+// ─── Refresh Tokens ───────────────────────────────────────────
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  ipAddress String?
+  userAgent String?
+  isRevoked Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("refresh_tokens")
+}
+
+// ─── API Keys ─────────────────────────────────────────────────
+
+model ApiKey {
+  id              String       @id @default(cuid())
+  userId          String
+  name            String
+  keyHash         String       @unique
+  keyPrefix       String
+  status          ApiKeyStatus @default(ACTIVE)
+  permissions     String[]     @default([])
+  allowedIps      String[]     @default([])
+  rateLimitPerMin Int          @default(60)
+  expiresAt       DateTime?
+  lastUsedAt      DateTime?
+  lastUsedIp      String?
+  usageCount      BigInt       @default(0)
+  description     String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  revokedAt       DateTime?
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activityLogs ActivityLog[]
+
+  @@index([userId])
+  @@index([keyHash])
+  @@index([status])
+  @@map("api_keys")
+}
+
+// ─── Folders ──────────────────────────────────────────────────
+
+model Folder {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String
+  description String?
+  userId      String
+  parentId    String?
+  path        String
+  colorTag    String?
+  isFavorite  Boolean   @default(false)
+  isShared    Boolean   @default(false)
+  isTrashed   Boolean   @default(false)
+  trashedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent   Folder?  @relation("FolderTree", fields: [parentId], references: [id])
+  children Folder[] @relation("FolderTree")
+  files    File[]
+  shares   Share[]
+
+  @@unique([userId, parentId, slug])
+  @@index([userId])
+  @@index([parentId])
+  @@index([path])
+  @@index([isTrashed])
+  @@map("folders")
+}
+
+// ─── Files ────────────────────────────────────────────────────
+
+model File {
+  id                String          @id @default(cuid())
+  originalName      String
+  storedName        String          @unique
+  displayName       String
+  extension         String
+  mimeType          String
+  size              BigInt
+  sha256Hash        String
+  userId            String
+  createdById       String
+  folderId          String?
+  storagePath       String
+  status            FileStatus      @default(ACTIVE)
+  virusScanStatus   VirusScanStatus @default(PENDING)
+  virusScanResult   String?
+  virusScanAt       DateTime?
+  hasThumbnail      Boolean         @default(false)
+  thumbnailPath     String?
+  hasPreview        Boolean         @default(false)
+  previewPath       String?
+  downloadCount     BigInt          @default(0)
+  versionNumber     Int             @default(1)
+  isFavorite        Boolean         @default(false)
+  isPublic          Boolean         @default(false)
+  description       String?
+  tags              String[]        @default([])
+  metadata          Json?
+  duplicateOf       String?
+  isTrashed         Boolean         @default(false)
+  trashedAt         DateTime?
+  deletedAt         DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdBy  User         @relation("FileCreatedBy", fields: [createdById], references: [id])
+  folder     Folder?      @relation(fields: [folderId], references: [id])
+  versions   FileVersion[]
+  shares     Share[]
+  activityLogs ActivityLog[]
+
+  @@index([userId])
+  @@index([folderId])
+  @@index([status])
+  @@index([isTrashed])
+  @@index([sha256Hash])
+  @@index([extension])
+  @@index([mimeType])
+  @@index([createdAt])
+  @@map("files")
+}
+
+// ─── File Versions ────────────────────────────────────────────
+
+model FileVersion {
+  id            String   @id @default(cuid())
+  fileId        String
+  versionNumber Int
+  storedName    String
+  storagePath   String
+  size          BigInt
+  sha256Hash    String
+  uploadedById  String
+  comment       String?
+  createdAt     DateTime @default(now())
+
+  file File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([fileId])
+  @@map("file_versions")
+}
+
+// ─── Chunked Uploads ──────────────────────────────────────────
+
+model ChunkedUpload {
+  id             String    @id @default(cuid())
+  userId         String
+  filename       String
+  mimeType       String
+  totalSize      BigInt
+  totalChunks    Int
+  uploadedChunks Int       @default(0)
+  chunkSize      Int
+  tempPath       String
+  folderId       String?
+  isComplete     Boolean   @default(false)
+  expiresAt      DateTime
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([isComplete])
+  @@map("chunked_uploads")
+}
+
+// ─── Shares ───────────────────────────────────────────────────
+
+model Share {
+  id              String      @id @default(cuid())
+  token           String      @unique
+  userId          String
+  fileId          String?
+  folderId        String?
+  type            ShareType   @default(PUBLIC)
+  access          ShareAccess @default(READ)
+  passwordHash    String?
+  expiresAt       DateTime?
+  maxDownloads    Int?
+  downloadCount   Int         @default(0)
+  allowDownload   Boolean     @default(true)
+  isActive        Boolean     @default(true)
+  label           String?
+  lastAccessedAt  DateTime?
+  lastAccessedIp  String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  file   File?   @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  folder Folder? @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+  @@index([fileId])
+  @@index([folderId])
+  @@map("shares")
+}
+
+// ─── Audit Logs ───────────────────────────────────────────────
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  userId     String?
+  action     AuditAction
+  resource   String?
+  resourceId String?
+  ipAddress  String?
+  userAgent  String?
+  details    Json?
+  success    Boolean     @default(true)
+  createdAt  DateTime    @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@index([resourceId])
+  @@map("audit_logs")
+}
+
+// ─── Activity Logs ────────────────────────────────────────────
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  apiKeyId   String?
+  action     String
+  resource   String?
+  resourceId String?
+  ipAddress  String?
+  userAgent  String?
+  method     String?
+  path       String?
+  statusCode Int?
+  duration   Int?
+  details    Json?
+  createdAt  DateTime @default(now())
+
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  apiKey ApiKey? @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+  file   File?   @relation(fields: [resourceId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([apiKeyId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+// ─── Notifications ────────────────────────────────────────────
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  data      Json?
+  isRead    Boolean          @default(false)
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@map("notifications")
+}
+
+// ─── Webhooks ─────────────────────────────────────────────────
+
+model Webhook {
+  id        String         @id @default(cuid())
+  userId    String
+  name      String
+  url       String
+  secret    String
+  events    WebhookEvent[]
+  isActive  Boolean        @default(true)
+  lastSentAt DateTime?
+  lastStatus Int?
+  failCount  Int           @default(0)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("webhooks")
+}
+
+// ─── Background Jobs ──────────────────────────────────────────
+
+model Job {
+  id          String    @id @default(cuid())
+  type        String
+  payload     Json?
+  status      JobStatus @default(PENDING)
+  result      Json?
+  errorMsg    String?
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status])
+  @@index([type])
+  @@map("jobs")
+}
+
+// ─── App Settings ─────────────────────────────────────────────
+
+model Setting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  type      String   @default("string")
+  group     String   @default("general")
+  label     String?
+  isPublic  Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+
+  @@index([group])
+  @@map("settings")
+}
+
+// ─── Storage Statistics ───────────────────────────────────────
+
+model StorageStat {
+  id              String   @id @default(cuid())
+  date            DateTime @unique @db.Date
+  totalFiles      BigInt   @default(0)
+  totalBytes      BigInt   @default(0)
+  uploadsCount    BigInt   @default(0)
+  downloadsCount  BigInt   @default(0)
+  deletionsCount  BigInt   @default(0)
+  uploadBytes     BigInt   @default(0)
+  downloadBytes   BigInt   @default(0)
+  newUsersCount   Int      @default(0)
+  apiCallsCount   BigInt   @default(0)
+  createdAt       DateTime @default(now())
+
+  @@index([date])
+  @@map("storage_stats")
+}

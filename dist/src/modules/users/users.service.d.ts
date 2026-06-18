@@ -1,0 +1,94 @@
+import { PrismaService } from '../../prisma/prisma.service';
+import { UpdateUserDto } from './dto/update-user.dto';
+import { UserRole } from '@prisma/client';
+export declare class UsersService {
+    private prisma;
+    constructor(prisma: PrismaService);
+    private get selectFields();
+    findAll(query: {
+        page?: number;
+        limit?: number;
+        search?: string;
+        role?: UserRole;
+    }): Promise<import("../../common/utils/pagination.util").PaginatedResult<{
+        email: string;
+        username: string;
+        displayName: string | null;
+        id: string;
+        role: import(".prisma/client").$Enums.UserRole;
+        status: import(".prisma/client").$Enums.UserStatus;
+        avatar: string | null;
+        twoFactorEnabled: boolean;
+        emailVerified: boolean;
+        lastLoginAt: Date | null;
+        lastLoginIp: string | null;
+        storageQuotaBytes: bigint;
+        storageUsedBytes: bigint;
+        timezone: string;
+        language: string;
+        createdAt: Date;
+        updatedAt: Date;
+    }>>;
+    findOne(id: string): Promise<{
+        email: string;
+        username: string;
+        displayName: string | null;
+        id: string;
+        role: import(".prisma/client").$Enums.UserRole;
+        status: import(".prisma/client").$Enums.UserStatus;
+        avatar: string | null;
+        twoFactorEnabled: boolean;
+        emailVerified: boolean;
+        lastLoginAt: Date | null;
+        lastLoginIp: string | null;
+        storageQuotaBytes: bigint;
+        storageUsedBytes: bigint;
+        timezone: string;
+        language: string;
+        createdAt: Date;
+        updatedAt: Date;
+    }>;
+    update(id: string, dto: UpdateUserDto, requesterId: string, requesterRole: UserRole): Promise<{
+        email: string;
+        username: string;
+        displayName: string | null;
+        id: string;
+        role: import(".prisma/client").$Enums.UserRole;
+        status: import(".prisma/client").$Enums.UserStatus;
+        avatar: string | null;
+        twoFactorEnabled: boolean;
+        emailVerified: boolean;
+        lastLoginAt: Date | null;
+        lastLoginIp: string | null;
+        storageQuotaBytes: bigint;
+        storageUsedBytes: bigint;
+        timezone: string;
+        language: string;
+        createdAt: Date;
+        updatedAt: Date;
+    }>;
+    remove(id: string, requesterId: string): Promise<{
+        email: string;
+        username: string;
+        displayName: string | null;
+        id: string;
+        role: import(".prisma/client").$Enums.UserRole;
+        status: import(".prisma/client").$Enums.UserStatus;
+        avatar: string | null;
+        twoFactorEnabled: boolean;
+        emailVerified: boolean;
+        lastLoginAt: Date | null;
+        lastLoginIp: string | null;
+        storageQuotaBytes: bigint;
+        storageUsedBytes: bigint;
+        timezone: string;
+        language: string;
+        createdAt: Date;
+        updatedAt: Date;
+    }>;
+    getStorageStats(userId: string): Promise<{
+        fileCount: number;
+        storageUsedBytes: bigint;
+        storageQuotaBytes: bigint;
+    }>;
+}
