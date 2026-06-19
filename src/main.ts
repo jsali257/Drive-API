@@ -21,9 +21,7 @@ async function bootstrap() {
 
   const config = app.get(ConfigService);
   const port = config.get<number>('port', 3003);
-  const frontendUrl = config.get<string>('frontendUrl', 'http://localhost:3002');
-  const nodeEnv = config.get<string>('nodeEnv', 'development');
-  const corsOrigins = config.get<string>('cors.origins', frontendUrl);
+  const nodeEnv = process.env.NODE_ENV || 'development';
 
   // Security headers
   app.use(
@@ -44,19 +42,14 @@ async function bootstrap() {
   app.use(compression());
 
   // CORS
-  const allowedOrigins = corsOrigins.split(',').map((o) => o.trim());
   app.enableCors({
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin) || nodeEnv === 'development') {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
+    origin: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Request-ID'],
     exposedHeaders: ['X-Total-Count', 'X-Page', 'X-Per-Page'],
     credentials: true,
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
   });
 
   // Global prefix
