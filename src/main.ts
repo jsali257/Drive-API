@@ -20,9 +20,10 @@ async function bootstrap() {
   });
 
   const config = app.get(ConfigService);
-  const port = config.get<number>('PORT', 3001);
-  const frontendUrl = config.get<string>('FRONTEND_URL', 'http://localhost:3000');
-  const nodeEnv = config.get<string>('NODE_ENV', 'development');
+  const port = config.get<number>('port', 3003);
+  const frontendUrl = config.get<string>('frontendUrl', 'http://localhost:3002');
+  const nodeEnv = config.get<string>('nodeEnv', 'development');
+  const corsOrigins = config.get<string>('cors.origins', frontendUrl);
 
   // Security headers
   app.use(
@@ -43,13 +44,10 @@ async function bootstrap() {
   app.use(compression());
 
   // CORS
+  const allowedOrigins = corsOrigins.split(',').map((o) => o.trim());
   app.enableCors({
     origin: (origin, callback) => {
-      const allowed = config
-        .get<string>('CORS_ORIGINS', frontendUrl)
-        .split(',')
-        .map((o) => o.trim());
-      if (!origin || allowed.includes(origin) || nodeEnv === 'development') {
+      if (!origin || allowedOrigins.includes(origin) || nodeEnv === 'development') {
         callback(null, true);
       } else {
         callback(new Error('Not allowed by CORS'));
