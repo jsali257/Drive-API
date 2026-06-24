@@ -36,9 +36,11 @@ export class SharesController {
 
   @Get(':token/access')
   @ApiOperation({ summary: 'Access a share link (public, no auth required)' })
-  access(@Param('token') token: string, @Query('password') password: string, @Req() req: Request) {
+  access(@Param('token') token: string, @Query('password') password: string, @Query('src') src: string, @Req() req: Request) {
     const ip = req.ip || req.socket?.remoteAddress;
-    return this.sharesService.access(token, password, ip);
+    const referer = req.headers['referer'] || req.headers['referrer'];
+    const userAgent = req.headers['user-agent'];
+    return this.sharesService.access(token, password, ip, referer as string, userAgent, src);
   }
 
   @Get(':token/view')
@@ -46,11 +48,14 @@ export class SharesController {
   async view(
     @Param('token') token: string,
     @Query('password') password: string,
+    @Query('src') src: string,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     const ip = req.ip || req.socket?.remoteAddress;
-    const { path: filePath, file } = await this.sharesService.viewFile(token, password, ip);
+    const referer = req.headers['referer'] || req.headers['referrer'];
+    const userAgent = req.headers['user-agent'];
+    const { path: filePath, file } = await this.sharesService.viewFile(token, password, ip, referer as string, userAgent, src);
     res.set({
       'Content-Type': file.mimeType,
       'Content-Disposition': `inline; filename="${encodeURIComponent(file.originalName)}"`,
@@ -67,11 +72,14 @@ export class SharesController {
     @Param('token') token: string,
     @Param('filename') filename: string,
     @Query('password') password: string,
+    @Query('src') src: string,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     const ip = req.ip || req.socket?.remoteAddress;
-    const { path: filePath, file } = await this.sharesService.viewFile(token, password, ip);
+    const referer = req.headers['referer'] || req.headers['referrer'];
+    const userAgent = req.headers['user-agent'];
+    const { path: filePath, file } = await this.sharesService.viewFile(token, password, ip, referer as string, userAgent, src);
     res.set({
       'Content-Type': file.mimeType,
       'Content-Disposition': `inline; filename="${encodeURIComponent(file.originalName)}"`,
@@ -87,17 +95,29 @@ export class SharesController {
   async download(
     @Param('token') token: string,
     @Query('password') password: string,
+    @Query('src') src: string,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     const ip = req.ip || req.socket?.remoteAddress;
-    const { path: filePath, file } = await this.sharesService.downloadFile(token, password, ip);
+    const referer = req.headers['referer'] || req.headers['referrer'];
+    const userAgent = req.headers['user-agent'];
+    const { path: filePath, file } = await this.sharesService.downloadFile(token, password, ip, referer as string, userAgent, src);
     res.set({
       'Content-Type': file.mimeType,
       'Content-Disposition': `attachment; filename="${encodeURIComponent(file.originalName)}"`,
       'Content-Length': file.size.toString(),
     });
     return new StreamableFile(fs.createReadStream(filePath));
+  }
+
+  @Get(':id/accesses')
+  @UseGuards(CombinedAuthGuard)
+  @ApiBearerAuth('jwt')
+  @ApiSecurity('api-key')
+  @ApiOperation({ summary: 'Get access history for a share link' })
+  accesses(@Param('id') id: string, @CurrentUser('id') userId: string, @Query() query: any) {
+    return this.sharesService.getAccessHistory(id, userId, query);
   }
 
   @Patch(':id/revoke')

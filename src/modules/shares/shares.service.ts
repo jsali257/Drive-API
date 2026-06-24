@@ -59,7 +59,24 @@ export class SharesService {
     return buildPaginatedResult(data, total, query);
   }
 
-  async access(token: string, password?: string, ip?: string) {
+  async getAccessHistory(shareId: string, userId: string, query: { page?: number; limit?: number }) {
+    const share = await this.prisma.share.findFirst({ where: { id: shareId, userId } });
+    if (!share) throw new NotFoundException('Share not found');
+
+    const { skip, take } = paginate(query);
+    const [data, total] = await Promise.all([
+      this.prisma.auditLog.findMany({
+        where: { action: 'SHARE_ACCESSED', resourceId: shareId },
+        skip, take,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.auditLog.count({ where: { action: 'SHARE_ACCESSED', resourceId: shareId } }),
+    ]);
+
+    return buildPaginatedResult(data, total, query);
+  }
+
+  async access(token: string, password?: string, ip?: string, referer?: string, userAgent?: string, source?: string) {
     const share = await this.prisma.share.findUnique({
       where: { token },
       include: { file: true, folder: { include: { files: true } } },
@@ -81,7 +98,13 @@ export class SharesService {
     });
 
     await this.prisma.auditLog.create({
-      data: { action: AuditAction.SHARE_ACCESSED, resourceId: share.id, ipAddress: ip },
+      data: {
+        action: AuditAction.SHARE_ACCESSED,
+        resourceId: share.id,
+        ipAddress: ip,
+        userAgent,
+        details: { referer: referer || null, source: source || null },
+      },
     });
 
     const { passwordHash, ...safeShare } = share;
@@ -102,7 +125,7 @@ export class SharesService {
     return { message: 'Share deleted' };
   }
 
-  async viewFile(token: string, password?: string, ip?: string) {
+  async viewFile(token: string, password?: string, ip?: string, referer?: string, userAgent?: string, source?: string) {
     const share = await this.prisma.share.findUnique({
       where: { token },
       include: { file: true },
@@ -122,10 +145,25 @@ export class SharesService {
     const filePath = this.storageEngine.resolvePath(share.file.storagePath);
     if (!fs.existsSync(filePath)) throw new NotFoundException('File not found on disk');
 
+    await this.prisma.share.update({
+      where: { id: share.id },
+      data: { downloadCount: { increment: 1 }, lastAccessedAt: new Date(), lastAccessedIp: ip },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        action: AuditAction.SHARE_ACCESSED,
+        resourceId: share.id,
+        ipAddress: ip,
+        userAgent,
+        details: { referer: referer || null, source: source || null, fileName: share.file.originalName },
+      },
+    });
+
     return { path: filePath, file: share.file };
   }
 
-  async downloadFile(token: string, password?: string, ip?: string) {
+  async downloadFile(token: string, password?: string, ip?: string, referer?: string, userAgent?: string, source?: string) {
     const share = await this.prisma.share.findUnique({
       where: { token },
       include: { file: true },
@@ -152,7 +190,13 @@ export class SharesService {
     });
 
     await this.prisma.auditLog.create({
-      data: { action: AuditAction.FILE_DOWNLOADED, resourceId: share.fileId, ipAddress: ip },
+      data: {
+        action: AuditAction.FILE_DOWNLOADED,
+        resourceId: share.fileId,
+        ipAddress: ip,
+        userAgent,
+        details: { referer: referer || null, source: source || null, shareId: share.id },
+      },
     });
 
     return { path: filePath, file: share.file };
