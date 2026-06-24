@@ -34,13 +34,14 @@ export class FoldersService {
     return folder;
   }
 
-  async findAll(userId: string, userRole: UserRole, query: { page?: number; limit?: number; parentId?: string; search?: string; isTrashed?: boolean }) {
+  async findAll(userId: string, userRole: UserRole, query: { page?: number; limit?: number; parentId?: string; root?: string; search?: string; isTrashed?: boolean }) {
     const { skip, take } = paginate(query);
     const isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(userRole);
     const where: any = { isTrashed: query.isTrashed ?? false };
 
     if (!isAdmin) where.userId = userId;
-    if (query.parentId !== undefined) where.parentId = query.parentId || null;
+    if (query.root) where.parentId = null;
+    else if (query.parentId !== undefined) where.parentId = query.parentId || null;
     if (query.search) where.name = { contains: query.search, mode: 'insensitive' };
 
     const [data, total] = await Promise.all([
