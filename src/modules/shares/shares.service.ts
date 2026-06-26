@@ -79,7 +79,15 @@ export class SharesService {
   async access(token: string, password?: string, ip?: string, referer?: string, userAgent?: string, source?: string) {
     const share = await this.prisma.share.findUnique({
       where: { token },
-      include: { file: true, folder: { include: { files: true } } },
+      include: {
+        file: true,
+        folder: {
+          include: {
+            files: { where: { isTrashed: false }, orderBy: { originalName: 'asc' } },
+            children: { where: { isTrashed: false }, orderBy: { name: 'asc' }, include: { _count: { select: { files: true } } } },
+          },
+        },
+      },
     });
 
     if (!share || !share.isActive) throw new NotFoundException('Share link not found or disabled');
@@ -111,6 +119,24 @@ export class SharesService {
     return safeShare;
   }
 
+  async updatePassword(id: string, userId: string, password: string | null) {
+    const share = await this.prisma.share.findFirst({ where: { id, userId } });
+    if (!share) throw new NotFoundException('Share not found');
+
+    if (password) {
+      const passwordHash = await bcrypt.hash(password, 10);
+      return this.prisma.share.update({
+        where: { id },
+        data: { passwordHash, type: 'PASSWORD_PROTECTED' },
+      });
+    } else {
+      return this.prisma.share.update({
+        where: { id },
+        data: { passwordHash: null, type: 'PUBLIC' },
+      });
+    }
+  }
+
   async revoke(id: string, userId: string) {
     const share = await this.prisma.share.findFirst({ where: { id, userId } });
     if (!share) throw new NotFoundException('Share not found');
@@ -123,6 +149,40 @@ export class SharesService {
     await this.prisma.share.delete({ where: { id } });
     await this.prisma.auditLog.create({ data: { userId, action: AuditAction.SHARE_DELETED, resourceId: id } });
     return { message: 'Share deleted' };
+  }
+
+  async downloadFolderFile(token: string, fileId: string, password?: string, ip?: string) {
+    const share = await this.prisma.share.findUnique({ where: { token } });
+
+    if (!share || !share.isActive) throw new NotFoundException('Share link not found or disabled');
+    if (!share.folderId) throw new BadRequestException('This share is not for a folder');
+    if (share.expiresAt && share.expiresAt < new Date()) throw new ForbiddenException('Share link has expired');
+    if (share.maxDownloads && share.downloadCount >= share.maxDownloads) throw new ForbiddenException('Download limit reached');
+
+    if (share.type === 'PASSWORD_PROTECTED') {
+      if (!password) throw new ForbiddenException('Password required');
+      const valid = await bcrypt.compare(password, share.passwordHash ?? '');
+      if (!valid) throw new ForbiddenException('Incorrect password');
+    }
+
+    const file = await this.prisma.file.findFirst({
+      where: { id: fileId, folderId: share.folderId, isTrashed: false },
+    });
+    if (!file) throw new NotFoundException('File not found in this shared folder');
+
+    const filePath = this.storageEngine.resolvePath(file.storagePath);
+    if (!fs.existsSync(filePath)) throw new NotFoundException('File not found on disk');
+
+    await this.prisma.share.update({
+      where: { id: share.id },
+      data: { downloadCount: { increment: 1 }, lastAccessedAt: new Date(), lastAccessedIp: ip },
+    });
+
+    await this.prisma.auditLog.create({
+      data: { action: AuditAction.FILE_DOWNLOADED, resourceId: file.id, ipAddress: ip },
+    });
+
+    return { path: filePath, file };
   }
 
   async viewFile(token: string, password?: string, ip?: string, referer?: string, userAgent?: string, source?: string) {

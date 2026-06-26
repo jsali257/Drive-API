@@ -90,6 +90,26 @@ export class SharesController {
     return new StreamableFile(fs.createReadStream(filePath));
   }
 
+  @Get(':token/folder-file/:fileId/download')
+  @ApiOperation({ summary: 'Download a specific file from a folder share (public, no auth required)' })
+  async downloadFolderFile(
+    @Param('token') token: string,
+    @Param('fileId') fileId: string,
+    @Query('password') password: string,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const ip = req.ip || req.socket?.remoteAddress;
+    const { path: filePath, file } = await this.sharesService.downloadFolderFile(token, fileId, password, ip);
+    res.set({
+      'Content-Type': file.mimeType,
+      'Content-Disposition': `attachment; filename="${encodeURIComponent(file.originalName)}"`,
+      'Content-Length': file.size.toString(),
+      'Access-Control-Allow-Origin': '*',
+    });
+    return new StreamableFile(fs.createReadStream(filePath));
+  }
+
   @Get(':token/download')
   @ApiOperation({ summary: 'Download the file for a share link (public, no auth required)' })
   async download(
@@ -118,6 +138,19 @@ export class SharesController {
   @ApiOperation({ summary: 'Get access history for a share link' })
   accesses(@Param('id') id: string, @CurrentUser('id') userId: string, @Query() query: any) {
     return this.sharesService.getAccessHistory(id, userId, query);
+  }
+
+  @Patch(':id/password')
+  @UseGuards(CombinedAuthGuard)
+  @ApiBearerAuth('jwt')
+  @ApiSecurity('api-key')
+  @ApiOperation({ summary: 'Set or clear the password for a share link' })
+  updatePassword(
+    @Param('id') id: string,
+    @CurrentUser('id') userId: string,
+    @Body() body: { password: string | null },
+  ) {
+    return this.sharesService.updatePassword(id, userId, body.password);
   }
 
   @Patch(':id/revoke')
