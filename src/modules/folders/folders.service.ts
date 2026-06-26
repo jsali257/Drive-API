@@ -10,6 +10,7 @@ export class FoldersService {
 
   async create(
     userId: string,
+    userRole: UserRole,
     data: { name: string; parentId?: string; description?: string; colorTag?: string },
   ) {
     const slug = slugify(data.name, { lower: true, strict: true });
@@ -22,7 +23,10 @@ export class FoldersService {
     if (existing) throw new ConflictException('A folder with this name already exists here');
 
     if (data.parentId) {
-      const parent = await this.prisma.folder.findFirst({ where: { id: data.parentId, userId } });
+      const isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(userRole);
+      const parent = await this.prisma.folder.findFirst({
+        where: { id: data.parentId, ...(isAdmin ? {} : { userId }) },
+      });
       if (!parent) throw new NotFoundException('Parent folder not found');
     }
 

@@ -16,8 +16,8 @@ export class FoldersController {
 
   @Post()
   @ApiOperation({ summary: 'Create a new folder' })
-  create(@CurrentUser('id') userId: string, @Body() body: { name: string; parentId?: string; description?: string; colorTag?: string }) {
-    return this.foldersService.create(userId, body);
+  create(@CurrentUser('id') userId: string, @CurrentUser('role') role: UserRole, @Body() body: { name: string; parentId?: string; description?: string; colorTag?: string }) {
+    return this.foldersService.create(userId, role, body);
   }
 
   @Get()
